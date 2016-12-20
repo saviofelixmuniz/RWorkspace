@@ -1,0 +1,168 @@
+---
+title: "Ridge e Lasso"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Pré-Processamento
+
+Na terceira parte do Lab 3 foi, novamente, utilizado o data frame dos alunos, iniciando a atividade com um pré-processamento dos dados, para que fossem agrupadas as notas por matrícula e, assim, fosse possível a leitura do rendimento de um determinado aluno nas diferentes disciplinas. Além disso, foram selecionadas somente as 
+variáveis de interesse: média dos alunos nas disciplinas de primeiro e segundo período. Por fim, foi feito o cálculo do coeficiente de rendimento do aluno. De forma que o data frame ficou no seguinte formato: 
+```{r,echo=FALSE}
+graduados.selected <- read.csv("/home/saviomuniz/workspace/R/AD2/Parte3/graduadosSelected.csv")
+head(graduados.selected)
+```
+
+O mesmo tratamento foi feito com os dados de validação, para que depois fosse possível fazer a previsão corretamente e o medir o erro obtido.
+
+## Primeiro treino com Ridge e Lasso
+
+O primeiro treino com os algoritmos de regressão foram feitos utilizando todas as variáveis. Utilizando a biblioteca Carrot, foi criada uma tabela de possíveis lambdas a serem utilizados e, com eles, foram feitos os primeiros treinos
+
+
+``` {r, echo=FALSE}
+validacao.cra <- read.csv("/home/saviomuniz/workspace/R/AD2/Parte3/validacaoCRA.csv")
+```
+
+``` {r, warning=FALSE, message=FALSE}
+library(ISLR)
+library(caret)
+
+set.seed(825)
+
+fitControl <- trainControl(method = "cv",
+                           number = 10)
+
+lambdaGrid <- expand.grid(lambda = 10^seq(-3, -4, length=200))
+
+ridge <- train(cra~., data = graduados.selected,
+               method='ridge',
+               trControl = fitControl,
+               tuneGrid = lambdaGrid,
+               preProcess=c('center', 'scale')
+)
+
+ridge.pred <- predict(ridge, validacao.cra)
+```
+
+Através da previsão que foi obtida é possível, então achar a média dos erros ao quadrado: 
+
+``` {r} 
+sqrt(mean(ridge.pred - validacao.cra$cra)^2)
+```
+
+O processo então foi repetido com o algoritmo Lasso: 
+
+``` {r, message=FALSE, warning=FALSE, results='hide'}
+lasso <- train(cra ~., graduados.selected,method='lasso',preProc=c('scale','center'),trControl=fitControl)
+predict.enet(lasso$finalModel, type='coefficients', s=lasso$bestTune$fraction, mode='fraction')
+lasso.pred <- predict(lasso, validacao.cra)
+sqrt(mean(lasso.pred - validacao.cra$cra)^2)
+```
+
+``` {r, echo=FALSE}
+sqrt(mean(lasso.pred - validacao.cra$cra)^2)
+```
+
+Assim, é possível observar que, em primeira instância, o Lasso obteve melhor desempenho. 
+
+## Melhorando o modelo
+
+A fim de melhorar o modelo, foi feito um estudo acerca da importãncia que cada variável estava exercendo. Obtiveram-se então os seguintes resultados, nos algoritmos Ridge e Lasso, respectivamente: 
+
+```{r}
+plot(varImp(ridge, scale = FALSE))
+
+plot(varImp(lasso, scale = FALSE))
+```
+
+Verificamos então, que algumas variáveis podem ser descartadas, pois podem estar atrapalhando o modelo.
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+library(readr)
+library(dplyr)
+```
+
+```{r}
+graduados.improved <- graduados.selected %>% 
+select(Matemática.Discreta,
+       Programação.II,
+       Teoria.dos.Grafos,
+       Fundamentos.de.Física.Clássica,
+       cra)
+```
+
+Repetimos então o treino para conferir se houveram melhoras 
+
+```{r}
+ridgeImproved <- train(cra~., data = graduados.improved,
+               method='ridge',
+               trControl = fitControl,
+               tuneGrid = lambdaGrid,
+               preProcess=c('center', 'scale')
+)
+
+ridge.improvedPred <- predict(ridgeImproved, validacao.cra)
+sqrt(mean(ridge.improvedPred - validacao.cra$cra)^2)
+```
+E agora com o Lasso: 
+```{r, results='hide'}
+lasso <- train(cra ~., graduados.improved,method='lasso',preProc=c('scale','center'),trControl=fitControl)
+predict.enet(lasso$finalModel, type='coefficients', s=lasso$bestTune$fraction, mode='fraction')
+lasso.improvedPred <- predict(lasso, validacao.cra)
+```
+``` {r,echo=FALSE}
+sqrt(mean(lasso.improvedPred - validacao.cra$cra)^2)
+```
+
+## Últimas melhorias
+
+É possível ir além. Então, olhando outra vez para o gráfico é visível que Programação II é a variável mais importante, juntamente com Matemática Discreta. E ainda, Física Clássica é consideravelmente menos importante comparada com as outras três variáveis selecionadas. Sendo assim, serão adicionadas três colunas ao modelo, na tentativa de melhorá-lo ainda mais: uma que pega o produto das notas de Matemática Discreta e de Programação II; uma que eleva ao quadrado as notas de Programação II; uma que tira a raiz quadrada das notas de Física Clássica. Fazendo o processamento, tem-se:
+
+``` {r}
+graduados.improved.more <- transform(graduados.improved, discreta.prog2 = Matemática.Discreta*Programação.II)
+graduados.improved.more <- transform(graduados.improved, prog2 = Programação.II^2)
+graduados.improved.more <- transform (graduados.improved, fisicasqrt = Fundamentos.de.Física.Clássica^(1/2))
+```
+
+``` {r, echo=FALSE}
+validacao.cra.transformed <- transform (validacao.cra, discreta.prog2 = Matemática.Discreta*Programação.II)
+validacao.cra.transformed <- transform (validacao.cra, prog2 = Programação.II^2)
+validacao.cra.transformed <- transform (validacao.cra, fisicasqrt = Fundamentos.de.Física.Clássica^(1/2))
+```
+
+Confirimos então, mais uma vez, os resultados obtidos: 
+
+```{r}
+ridge.improved.more <- train(cra~., data = graduados.improved.more,
+               method='ridge',
+               trControl = fitControl,
+               tuneGrid = lambdaGrid,
+               preProcess=c('center', 'scale')
+)
+
+ridge.improved.more.pred <- predict(ridge.improved.more, validacao.cra.transformed)
+sqrt(mean(ridge.improved.more.pred - validacao.cra.transformed$cra)^2)
+```
+
+
+Novamente, com o Lasso: 
+
+```{r, results='hide'}
+lasso.improved.more <- train(cra ~., graduados.improved.more,method='lasso',preProc=c('scale','center'),trControl=fitControl)
+predict.enet(lasso.improved.more$finalModel, type='coefficients', s=lasso.improved.more$bestTune$fraction, mode='fraction')
+lasso.improved.more.pred <- predict(lasso.improved.more, validacao.cra.transformed)
+sqrt(mean(lasso.improved.more.pred - validacao.cra.transformed$cra)^2)
+```
+```{r, echo=FALSE}
+message(c(0.006297658))
+```
+
+## Conclusão
+ 
+ Conclui-se então que o melhor modelo encontrado foi selecionando as variáveis mais importantes do primeiro e segundo períodos e criando novas colunas que destaram ainda mais a importância de algumas variáveis, utilizando do algoritmo Lasso.
+
+
