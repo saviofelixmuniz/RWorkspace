@@ -32,3 +32,5 @@ olindo <- left_join(subject.wide, data.grouped.matricula, "MAT_ALU_MATRICULA")
 ggplot(olindo, aes(MEDIADME)) +
   geom_freqpoly() + 
   facet_wrap(~ Evadiu, scales = "free_y")
+
+#olhar bin_width
